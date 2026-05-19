@@ -1,0 +1,17 @@
+numpy
+torch
+torchvision
+matplotlib
+pandas
+einops
+pillow
+imageio
+imageio-ffmpeg
+vizdoom
+portpicker
+onnx
+onnxscript
+onnx2pytorch
+gymnasium
+pygame
+ipykernel

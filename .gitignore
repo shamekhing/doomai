@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*/__pycache__/
+runs/
+*.pyc
+.ipynb_checkpoints/
+demos/ # Do your own demos, but don't commit them to the repo
+_vizdoom.ini
+best-bc-dqn-init.pth
+demos/*
+report/
