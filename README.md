@@ -6,7 +6,7 @@ The repository includes the Doom arena configuration, bot settings, training loo
 
 ## Agent in Play
 
-![Doom Gameplay](https://raw.githubusercontent.com/shamekhing/doomai/master/results/best-bc-dqn-init.gif)
+![Doom Gameplay](results/best-bc-dqn-init.gif)
 
 ## Table of Contents
 
