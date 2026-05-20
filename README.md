@@ -4,6 +4,10 @@
 
 The repository includes the Doom arena configuration, bot settings, training loops, demo collection tools, local evaluation, replay recording, and ONNX export for challenge-style submissions.
 
+## Agent in Play
+
+![Doom Gameplay](https://img.placeholder.com/doom-agent.jpg)
+
 ## Table of Contents
 
 - [Project Overview](#project-overview)
