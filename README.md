@@ -974,6 +974,10 @@ Increase subsampling or reduce episodes:
 ./doomai.sh --view runs/RUN_NAME/model.onnx --out replay.gif --episodes 1 --subsample 4
 ```
 
+## Disclaimer
+
+This project uses code and resources from [jku.wad](https://github.com/gerkone/jku.wad) as a foundation. Please refer to the original repository for licensing information and attribution.
+
 ## Notes
 
 - `arena/` is the local ViZDoom/Arena adaptation used by this project.
