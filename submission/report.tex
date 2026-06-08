@@ -1,0 +1,223 @@
+\documentclass[10.5pt,twocolumn,a4paper]{article}
+\usepackage[top=1.7cm,bottom=1.7cm,left=1.6cm,right=1.6cm,columnsep=0.55cm]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\setlength{\parskip}{3pt}
+\setlength{\parindent}{0pt}
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}{7pt plus 2pt}{3pt}{\normalfont\large\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}{5pt}{2pt}{\normalfont\normalsize\bfseries}}
+\makeatother
+
+\title{\vspace{-1.5em}\textbf{Imitation Learning for the JKU Doom Challenge}\\[2pt]
+{\normalsize Deep Reinforcement Learning (365.382, SS26) JKU LIT AI Lab}}
+\author{Shamekh Al-Suwi (K12146739)}
+\date{June 2026}
+
+\begin{document}
+\maketitle\vspace{-1em}
+
+%──────────────────────────────────────────────
+\section{Task \& Environment}
+%──────────────────────────────────────────────
+
+The final challenge is based on the 1993 first-person shooter \textit{DOOM} by id Software. The assignment uses \texttt{VizdoomMPEnv} from the JKU WAD environment and evaluates agents in the default \texttt{ROOM} setting against four easy bots. Grading depends on PvE performance against bots with the simple challenge scoring rule.
+
+The official submission consists of the trained ONNX model uploaded to the submission server and a Moodle zip named \texttt{k<studentid>.zip}. The Moodle archive should contain \texttt{code.py}, \texttt{model.onnx}, and a short report. The model size limit is 50MB; the submitted model is only 2.38MB.
+
+The environment state is a $128{\times}128$ game frame plus optional buffers. I used RGB screen observations with the labels and depth buffers. The action space is discrete with 8 actions: no-op plus 7 game buttons (move forward, attack, strafe left/right, turn left/right, jump). The reward follows the assignment description: positive reward for hits, negative reward for damage taken, and larger positive reward for frags.
+
+The grading thresholds from the assignment are:
+
+\begin{center}\small
+\begin{tabular}{rl}
+\hline
+\textbf{Mean score} & \textbf{Points} \\
+\hline
+$<0$ & 0 \\
+$\geq 0$ & 2 \\
+$\geq 20$ & 4 \\
+$\geq 40$ & 6 \\
+$\geq 60$ & 8 \\
+$\geq 80$ & 10 \\
+$\geq 100$ & 12 \\
+$\geq 120$ & 14 \\
+\hline
+\end{tabular}
+\end{center}
+
+The local 10-episode evaluation mean of the final model is 199.9000, which is above the highest listed local threshold ($\geq120$).
+
+The final submitted model is:
+
+\begin{verbatim}
+submission/model.onnx
+\end{verbatim}
+
+It was copied from the best saved behaviour-cloned model:
+
+\begin{verbatim}
+results/best-bc-dqn-init-hud-full.onnx
+\end{verbatim}
+
+The ONNX metadata is important because the evaluator reconstructs the observation format from it. The final model uses RGB screen observations with four stacked frames, labels and depth buffers, full HUD, crosshair enabled, and \texttt{algo\_type=POLICY}. The exported input and output are:
+
+\[
+  x \in \mathbb{R}^{1 \times 3 \times 4 \times 128 \times 128}
+  \rightarrow
+  \mathrm{logits} \in \mathbb{R}^{1 \times 8}.
+\]
+
+%──────────────────────────────────────────────
+\section{Architecture}
+%──────────────────────────────────────────────
+
+\textbf{Policy network.} The submitted policy uses the same convolutional architecture as the DQN warm-up network, but it is trained with supervised imitation loss and exported as policy logits rather than Q-values:
+
+\[
+  x
+  \xrightarrow{\mathrm{reshape}}
+  \mathbb{R}^{20 \times 128 \times 128}
+  \xrightarrow{\mathrm{CNN}}
+  \mathbb{R}^{1024}
+  \xrightarrow{\mathrm{FC}}
+  \mathbb{R}^{512}
+  \xrightarrow{\mathrm{FC}}
+  \mathbb{R}^{8}.
+\]
+
+The input has 20 effective channels: RGB screen, labels, and depth buffers for 4 stacked frames. The convolutional backbone is:
+
+\begin{itemize}
+  \item $\mathrm{Conv}(20{\to}32, 8{\times}8, s{=}4)$ + ReLU,
+  \item $\mathrm{Conv}(32{\to}64, 4{\times}4, s{=}2)$ + ReLU,
+  \item $\mathrm{Conv}(64{\to}64, 3{\times}3, s{=}1)$ + ReLU,
+  \item adaptive average pooling to $4{\times}4$,
+  \item linear $1024{\to}512$ + ReLU,
+  \item linear $512{\to}8$ logits.
+\end{itemize}
+
+During behaviour cloning the logits are passed directly to \texttt{CrossEntropyLoss}. During evaluation, because the model is marked as \texttt{POLICY}, actions are sampled from \texttt{Categorical(logits=logits)} unless greedy mode is explicitly requested.
+
+%──────────────────────────────────────────────
+\section{Behavioural Cloning}
+%──────────────────────────────────────────────
+
+Behavioural Cloning (BC) treats imitation as supervised classification. Each human demonstration transition is an observation-action pair $(s_i, a_i)$ stored in a PyTorch \texttt{.pt} file. The model learns:
+
+\[
+  \hat{\pi}(a|s) = \mathrm{softmax}(f_\theta(s)),
+  \qquad
+  \mathcal{L}_{BC} =
+  -\log \hat{\pi}(a_i|s_i).
+\]
+
+\textbf{Data.} Human demonstrations were collected with the local pygame collector. The current demonstration directory contains 35 files and 70,000 stored steps. Total recorded reward across the demos is 7,917.76. The aggregate action distribution is shown below.
+
+\begin{center}\small
+\begin{tabular}{lrr}
+\hline
+\textbf{Action} & \textbf{Count} & \textbf{Share} \\
+\hline
+noop & 24,767 & 35.38\% \\
+move\_forward & 1,223 & 1.75\% \\
+attack & 31,063 & 44.38\% \\
+move\_left & 2 & 0.00\% \\
+move\_right & 0 & 0.00\% \\
+turn\_left & 5,866 & 8.38\% \\
+turn\_right & 7,079 & 10.11\% \\
+jump & 0 & 0.00\% \\
+\hline
+\end{tabular}
+\end{center}
+
+\textbf{Training details.} The final BC pipeline keeps no-op actions by default. This matters in Doom because no-op frames encode timing: waiting, aiming, and firing rhythm. Earlier versions dropped no-ops and used balanced action batches, but that distorted the actual human policy. The final default uses natural action sampling and no class weights.
+
+\begin{center}\small
+\begin{tabular}{ll}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Epochs & 12 \\
+Batch size & 128 \\
+Optimiser & Adam \\
+Learning rate & DQN LR from config \\
+Gradient clip & max-grad-norm from config \\
+Loss & CrossEntropyLoss \\
+No-op handling & kept by default \\
+Action sampling & natural demo distribution \\
+\hline
+\end{tabular}
+\end{center}
+
+\textbf{Output semantics.} Although the module is named \texttt{DoomQNetwork}, the BC checkpoint is not treated as a Q-value policy. It is marked as \texttt{POLICY}, because cross-entropy trains logits to imitate human actions.
+
+%──────────────────────────────────────────────
+\section{Export \& Submission Code}
+%──────────────────────────────────────────────
+
+The submitted \texttt{code.py} is self-contained. It includes the imitation-learning pipeline: demonstration summary, behaviour-cloning training, ONNX export, ONNX loading, and action selection. It does not rely on importing the local repository package. The working submission folder contains:
+
+\begin{verbatim}
+code.py
+model.onnx
+report.tex
+\end{verbatim}
+
+For Moodle, this \texttt{report.tex} can be compiled to the official \texttt{report.pdf} requested in the assignment brief.
+
+The final export path stores a \texttt{config} metadata field inside \texttt{model.onnx}. The evaluator uses this metadata to set screen format, frame stack size, labels/depth buffers, HUD mode, crosshair setting, and policy-vs-Q-value action selection.
+
+%──────────────────────────────────────────────
+\section{Developer Journey}
+%──────────────────────────────────────────────
+
+The project started with PPO because it was the most direct policy-gradient baseline for the Doom task. PPO produced occasional high score spikes, but the behaviour was unstable. The agent often learned brittle habits such as standing still, turning in place, or repeatedly attacking without reliable target acquisition.
+
+DQN and DQN-to-PPO hybrid training were then added to improve exploration and create a value-based warm-up before policy fine-tuning. These experiments improved the training workflow and produced useful tooling, but the main practical improvement came from human demonstrations. Behaviour cloning gave the agent an immediate prior over aiming, attacking, and turning, which random exploration did not discover reliably.
+
+The final project was reorganised into the standalone \texttt{doomai/} package with separate folders for environment code, PPO, DQN, hybrid training, imitation learning, utility evaluation, and replay viewing. For repeated work, scripts were added for demo collection, BC pretraining, ONNX export, model audit, and evaluation.
+
+%──────────────────────────────────────────────
+\section{Results}
+%──────────────────────────────────────────────
+
+The final selected model was evaluated locally with:
+
+\begin{verbatim}
+.venv/bin/python -m utility.eval \
+  --submission submission/model.onnx \
+  --episodes 10 \
+  --device cpu
+\end{verbatim}
+
+CUDA PyTorch was installed, but the terminal used for this final report could not access the NVIDIA driver, so the completed verification run used CPU inference. The policy is identical; only inference speed changes. The 10-episode result was:
+
+\begin{verbatim}
+Scores: [319.5, 211.9, 43.7, 172.5, 167.5,
+         197.6, 157.8, 283.3, 183.5, 261.7]
+Mean  : 199.9000
+Std   : 73.1222
+\end{verbatim}
+
+The high standard deviation is expected in Doom because random spawns, enemy positions, and early frag opportunities strongly affect episode return. The important result is that the chosen model repeatedly reaches high-scoring episodes and has a mean score close to 200 over the local 10-episode check.
+
+%──────────────────────────────────────────────
+\section{Limitations}
+%──────────────────────────────────────────────
+
+The biggest limitation is the single-action discrete action space. Human play often requires combinations such as moving forward while attacking, but the current recorder stores only one action per frame. Since attack has high priority in the keyboard mapping, some movement intent is hidden inside attack frames. This explains the low forward and strafe counts in the demonstration dataset.
+
+The current demos also contain almost no strafing or jumping. Future work should expand the action space to include common button combinations and recollect demonstrations with more movement diversity.
+
+%──────────────────────────────────────────────
+\section{Conclusion}
+%──────────────────────────────────────────────
+
+The final submission is an imitation-learning model for the JKU Doom challenge. PPO, DQN, and hybrid RL were useful development stages, but the selected model is best described as a behaviour-cloned policy trained from human demonstrations and exported to ONNX with full-HUD observation metadata.
+
+The submitted model is \texttt{submission/model.onnx}. It passed ONNX validation, loaded correctly through the local evaluator, and achieved a 10-episode local mean score of 199.9000.
+
+\end{document}
